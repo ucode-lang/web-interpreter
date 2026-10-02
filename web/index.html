@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ucode · web</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="256x256" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
 <style>
   :root {
     --bg: #0d1117;
@@ -37,6 +40,8 @@
   header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--accent); }
   header .ver { color: var(--dim); font-size: 12px; }
   header .status { margin-left: auto; font-size: 12px; color: var(--dim); }
+  header .penlink { font-size: 12px; color: var(--accent); text-decoration: none; margin-left: 14px; }
+  header .penlink:hover { text-decoration: underline; }
   #output {
     flex: 1;
     overflow-y: auto;
@@ -114,6 +119,7 @@
   <h1>ucode</h1>
   <span class="ver">web interpreter (wasm)</span>
   <span class="status" id="status">loading…</span>
+  <a class="penlink" href="pen/" title="ucodepen: multi-file playground with templates and data">ucodepen &rarr;</a>
 </header>
 <div id="output"></div>
 <div id="inputbar">
@@ -159,13 +165,18 @@
     else
       wasm._ucode_run(ptr);
     wasm._free(ptr);
+    wasm.flushTty(false); // deliver partial lines stuck in the TTY buffers
 
     const out = wasm.UTF8ToString(wasm._ucode_get_output());
     const err = wasm.UTF8ToString(wasm._ucode_get_error());
+    const errOut = wasm.stderrText || '';
     wasm._ucode_clear_output();
+    wasm.stderrText = '';
 
     if (out)
       addLine(out, asExpr ? 'result' : 'out');
+    if (errOut)
+      addLine(errOut, 'err');
     if (err)
       addLine(err, 'err');
   }
@@ -457,10 +468,14 @@
     const ptr = writeStr('/demo/notes.uc');
     wasm._ucode_fs_run(ptr);
     wasm._free(ptr);
+    wasm.flushTty(false); // deliver partial lines stuck in the TTY buffers
     const out = wasm.UTF8ToString(wasm._ucode_get_output());
     const err = wasm.UTF8ToString(wasm._ucode_get_error());
+    const errOut = wasm.stderrText || '';
     wasm._ucode_clear_output();
+    wasm.stderrText = '';
     if (out) addLine(out, 'out');
+    if (errOut) addLine(errOut, 'err');
     if (err) addLine(err, 'err');
     input.focus();
   };
@@ -505,6 +520,37 @@
     }
   });
 
+  // ------------------------------------------------------------------
+  // Deep-linking: #code=<URI-encoded source>
+  //
+  // External pages (docs, landing page "Run" buttons) can open the REPL
+  // with a program preloaded. The source is echoed into the transcript,
+  // executed as a script (statement mode, imports rewritten for
+  // persistence), and left in the input box for tweaking. The hash is
+  // consumed so a reload does not re-run the example.
+  // ------------------------------------------------------------------
+  function consumeCodeHash() {
+    const m = location.hash.match(/^#code=(.+)$/);
+    if (!m || !wasm) return;
+
+    let src = '';
+    try { src = decodeURIComponent(m[1]); } catch (e) { return; }
+    if (!src.trim()) return;
+
+    history.replaceState(null, '', location.pathname + location.search);
+
+    addLine('ucode> ' + src, 'prompt');
+    execute(transformImports(src), false);
+
+    const el = document.getElementById('input');
+    el.value = src;
+    autosize();
+    updatePrompt();
+    el.focus();
+  }
+
+  window.addEventListener('hashchange', consumeCodeHash);
+
   // Bootstrap: use the emscripten factory exposed as `ucodeWasm`.
   // ucode.js is loaded as a classic script that defines global ucodeWasm.
   function boot() {
@@ -524,6 +570,7 @@
       mod._ucode_fs_seed_demo();
       addLine('Loaded demo filesystem to /demo (use the "run demo" button, ' +
         'or read files with require("fs").readfile("/demo/..."))', 'dim');
+      consumeCodeHash();
       document.getElementById('input').focus();
     }).catch((e) => {
       status('init error: ' + e, 'var(--err)');
