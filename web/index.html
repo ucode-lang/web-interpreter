@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ucode · web</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--accent); }
+  header .ver { color: var(--dim); font-size: 12px; }
+  header .status { margin-left: auto; font-size: 12px; color: var(--dim); }
+  #output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #output .ln { display: block; }
+  #output .prompt { color: var(--accent); }
+  #output .out { color: var(--text); }
+  #output .err { color: var(--err); }
+  #output .result { color: var(--ok); }
+  #inputbar {
+    display: flex;
+    align-items: flex-start;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+  #inputbar .prompt {
+    padding: 10px 12px 0 0;
+    color: var(--accent);
+    user-select: none;
+    white-space: pre;
+    line-height: 1.5em;
+  }
+  #inputbar .prompt.cont { color: var(--dim); }
+  #inputbar .spacer { flex: 1; min-width: 8px; max-width: 1em; }
+  #inputbar .demo {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    margin-right: 8px;
+    margin-top: 2px;
+  }
+  #inputbar .demo:hover { background: rgba(88,166,255,0.12); }
+  #input {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    font: inherit;
+    line-height: 1.5em;
+    padding: 10px 12px;
+    margin-top: 0;
+    outline: none;
+    resize: none;
+    overflow: hidden;
+    max-height: 40vh;
+  }
+  #input::placeholder { color: var(--dim); }
+  #run {
+    background: var(--accent);
+    color: #0d1117;
+    border: 1px solid var(--accent);
+    padding: 8px 12px;
+    margin-top: 2px;
+    font-weight: 600;
+  }
+  #run:hover { background: #79b8ff; border-color: #79b8ff; }
+  button {
+    background: var(--accent);
+    color: #0d1117;
+    border: 0;
+    padding: 0 18px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ucode</h1>
+  <span class="ver">web interpreter (wasm)</span>
+  <span class="status" id="status">loading…</span>
+</header>
+<div id="output"></div>
+<div id="inputbar">
+  <span class="prompt" id="prompt">ucode&gt;</span>
+  <textarea id="input" rows="1" autocomplete="off" spellcheck="false"
+            placeholder='stateful session — try: x = 1, then  print(x, "\n"), or  import { sqrt } from "math"'
+            autofocus></textarea>
+  <span class="spacer"></span>
+  <button id="demos" class="demo" title="Run the bundled /demo/notes.uc script">run demo</button>
+  <button id="run" class="run" title="Submit (Shift+Enter = new line, Alt+Enter = force submit)">run</button>
+</div>
+
+<script>
+  // Load the emscripten module (ucodeWasm factory).
+  let wasm;
+
+  function status(s, cls) {
+    const el = document.getElementById('status');
+    el.textContent = s;
+    el.style.color = cls || 'var(--dim)';
+  }
+
+  function writeStr(s) {
+    const len = wasm.lengthBytesUTF8(s);
+    const ptr = wasm._malloc(len + 1);
+    wasm.stringToUTF8(s, ptr, len + 1);
+    return ptr;
+  }
+
+  const output = document.getElementById('output');
+  function addLine(text, cls) {
+    const div = document.createElement('div');
+    div.className = 'ln ' + (cls || '');
+    div.textContent = text;
+    output.appendChild(div);
+    output.scrollTop = output.scrollHeight;
+  }
+
+  function execute(source, asExpr) {
+    const ptr = writeStr(source);
+    if (asExpr)
+      wasm._ucode_eval(ptr);
+    else
+      wasm._ucode_run(ptr);
+    wasm._free(ptr);
+
+    const out = wasm.UTF8ToString(wasm._ucode_get_output());
+    const err = wasm.UTF8ToString(wasm._ucode_get_error());
+    wasm._ucode_clear_output();
+
+    if (out)
+      addLine(out, asExpr ? 'result' : 'out');
+    if (err)
+      addLine(err, 'err');
+  }
+
+  // ------------------------------------------------------------------
+  // Multi-line input
+  // ------------------------------------------------------------------
+  // The input is a <textarea>. By default Enter submits, but:
+  //   Shift+Enter  -> insert a newline (start/continue a multi-line block)
+  //   Alt+Enter    -> force submit even if the block looks unfinished
+  //   plain Enter  -> submit if the input is "complete", otherwise insert a
+  //                   newline (so you can build up a multi-line statement)
+  // "Complete" is judged with a small scanner that tracks brace/paren/bracket
+  // balance and string/comment state, mirroring ucode's own lexing closely
+  // enough that pressing Enter inside an unclosed {...}, (...), [...] or a
+  // ".."/'..'/`..` string keeps the line open instead of submitting.
+
+  // Returns true when the input still looks incomplete (has an unclosed
+  // delimiter or is inside an unterminated string/comment), so Enter should
+  // continue rather than submit.
+  function isUnbalanced(src) {
+    let i = 0;
+    const n = src.length;
+    const stack = []; // pending openers: '(', '[', '{'
+    let inLineComment = false;
+
+    while (i < n) {
+      const ch = src[i];
+      const ch2 = i + 1 < n ? src[i + 1] : '';
+
+      // Line comment: //  or  a lone /  (ucode treats / as a comment start)
+      if (inLineComment) {
+        if (ch === '\n') inLineComment = false;
+        i++;
+        continue;
+      }
+
+      // String: ", ', `  -- scan to matching unescaped closer.
+      if (ch === '"' || ch === "'" || ch === '`') {
+        const q = ch;
+        i++;
+        let closed = false;
+        while (i < n) {
+          if (src[i] === '\\') { i += 2; continue; } // skip escape
+          if (src[i] === q) { closed = true; break; }
+          i++;
+        }
+        if (!closed) return true; // unterminated string
+        i++;
+        continue;
+      }
+
+      // Block comment: {# ... #}  or  {#- ... -#}
+      if (ch === '{' && ch2 === '#') {
+        i += 2;
+        let closed = false;
+        while (i < n) {
+          if (src[i] === '#') {
+            // -# or #  both close (the dash is optional in either position)
+            const next = i + 1 < n ? src[i + 1] : '';
+            if (next === '#' || (next === '-' && i + 2 < n && src[i + 2] === '}')) {
+              closed = true;
+              // consume '#}' or '-#}'
+              i += (src[i + 1] === '-') ? 3 : 2;
+              break;
+            }
+          }
+          i++;
+        }
+        if (!closed) return true; // unterminated block comment
+        continue;
+      }
+
+      if (ch === '(' || ch === '[' || ch === '{') {
+        stack.push(ch);
+        i++;
+        continue;
+      }
+      if (ch === ')' || ch === ']' || ch === '}') {
+        // '{' may close a code block; '#' was handled above as a comment.
+        if (stack.length === 0) return false; // stray closer: not our concern
+        stack.pop();
+        i++;
+        continue;
+      }
+
+      i++;
+    }
+
+    // Anything still open (brace/paren/bracket) means incomplete.
+    return stack.length > 0;
+  }
+
+  // Auto-grow the textarea to fit its content, capping at 40vh.
+  function autosize() {
+    const el = document.getElementById('input');
+    el.style.height = 'auto';
+    const cap = Math.round(window.innerHeight * 0.4);
+    el.style.height = Math.min(el.scrollHeight, cap) + 'px';
+  }
+
+  // The prompt column shows "ucode>" on the first line and "…>" on each
+  // continuation line, matching the number of lines in the input.
+  function updatePrompt() {
+    const el = document.getElementById('input');
+    const prompt = document.getElementById('prompt');
+    const lines = el.value.split('\n').length;
+    if (lines <= 1) {
+      prompt.textContent = 'ucode> ';
+      prompt.classList.remove('cont');
+    } else {
+      prompt.textContent = 'ucode> ' + new Array(lines - 1).fill('…>').join('\n');
+      prompt.classList.add('cont');
+    }
+  }
+
+  // Insert a newline at the caret (used by Shift+Enter and by Enter on an
+  // unbalanced block). Auto-indents if the last char is an opener.
+  function insertNewline() {
+    const el = document.getElementById('input');
+    const s = el.selectionStart, e = el.selectionEnd;
+    const before = el.value.slice(0, s);
+    const indent = (/[({]$/.test(before.trimEnd()) ||
+                    /^[{([]/.test(el.value.slice(e, e + 1).trimStart())) ? '    ' : '';
+    el.value = before + '\n' + indent + el.value.slice(e);
+    el.selectionStart = el.selectionEnd = s + 1 + indent.length;
+    autosize();
+    updatePrompt();
+  }
+
+  // Rewrite top-level `import` statements so the imported names land in the
+  // persistent global scope (ucode's import declares them as locals of the
+  // command's main function, which would not survive to the next command).
+  // Each import is turned into bare assignments, which ucode treats as
+  // globals in a non-strict program:
+  //
+  //   import { a, b as c } from "mod"   ->  __m = require("mod"); a = __m.a; c = __m.b;
+  //   import * as ns      from "mod"    ->  ns = require("mod");
+  //   import def          from "mod"    ->  def = require("mod");
+  //
+  // The echoed prompt still shows the original source; only what we feed to
+  // the VM is transformed.
+  function transformImports(src) {
+    let counter = 0;
+    // Build the pattern as a string so the backslash/backreference escaping
+    // is unambiguous (a regex literal's \\2 would be a literal backslash-2,
+    // not the \2 backreference to the opening quote group).
+    //
+    //   ^\s*import  head  from  "<module>"  ;?
+    //   head = { a, b as c }   |   * as ns   |   def
+    const re = new RegExp(
+      '^\\s*import\\b([\\s\\S]*?)\\bfrom\\b\\s*([\'""])'
+      + '((?:[^\'"\\\\]|\\\\.)*)'
+      + '\\2'                 // backreference to the opening quote
+      + '(;?)',
+      'gm');
+
+    return src.replace(re, (full, head, _q, mod) => {
+      const h = head.trim();
+      const stmt = `__mod${counter} = require(${JSON.stringify(mod)});`;
+      let assign;
+
+      if (/^\*\s+as\s+/.test(h)) {
+        const ns = h.replace(/^\*\s+as\s+/, '').trim();
+        assign = `${ns} = __mod${counter};`;
+      } else if (/^\{/.test(h)) {
+        const inner = h.slice(1, h.lastIndexOf('}')).trim();
+        assign = inner.split(',')
+          .map(s => s.trim()).filter(Boolean)
+          .map(entry => {
+            const as = entry.split(/\s+as\s+/);
+            const local = (as[1] || as[0]).trim();
+            const remote = as[0].trim();
+            return `${local} = __mod${counter}.${remote};`;
+          }).join(' ');
+      } else {
+        assign = `${h.trim()} = __mod${counter};`;
+      }
+
+      counter++;
+      return stmt + ' ' + assign;
+    });
+  }
+
+  function submit(force) {
+    const input = document.getElementById('input');
+    const src = input.value;
+    if (!src.trim()) return;
+    // Plain Enter should not submit while the block is still open, unless
+    // the user forced it (Alt+Enter / Run button).
+    if (!force && isUnbalanced(src)) {
+      insertNewline();
+      return;
+    }
+    input.value = '';
+    autosize();
+    updatePrompt();
+    addLine('ucode> ' + src, 'prompt');
+    // Heuristic: treat as an expression (eval + echo result) when it does
+    // not start with a statement keyword. Otherwise run it as a script.
+    const asExpr = !/^\s*(?:let\b|var\b|const\b|function\b|if\b|for\b|while\b|return\b|do\b|switch\b|try\b|catch\b|new\b|else\b|import\b|module\b|export\b|print\b)/i.test(src);
+    execute(transformImports(src), asExpr);
+
+    // Record in history (dedupe consecutive repeats). Multi-line blocks are
+    // stored whole so you can recall them with arrow-up.
+    if (history[history.length - 1] !== src)
+      history.push(src);
+    if (history.length > MAX_HIST)
+      history = history.slice(history.length - MAX_HIST);
+    persistHistory();
+    histPos = -1;
+    histSaved = '';
+
+    input.focus();
+  }
+
+  // ------------------------------------------------------------------
+  // Command history (arrow up/down), with edit-in-place and a saved
+  // in-progress line so you can walk history and get your draft back.
+  // ------------------------------------------------------------------
+  const MAX_HIST = 100;
+  let history = [];
+  let histPos = -1;      // -1 = not browsing (editing fresh / current line)
+  let histSaved = '';    // the draft captured when browsing started
+
+  // Try to restore history from localStorage (same session / revisit).
+  try {
+    const saved = JSON.parse(localStorage.getItem('ucode-history') || '[]');
+    if (Array.isArray(saved)) {
+      history = saved.slice(-MAX_HIST);
+      histPos = history.length ? history.length - 1 : -1;
+    }
+  } catch (e) { /* ignore */ }
+
+  function persistHistory() {
+    try {
+      localStorage.setItem('ucode-history',
+        JSON.stringify(history.slice(-MAX_HIST)));
+    } catch (e) { /* storage unavailable / full */ }
+  }
+
+  // Move through history. dir: -1 = older (up), +1 = newer (down).
+  function histNavigate(dir) {
+    const input = document.getElementById('input');
+
+    if (dir < 0) {
+      if (!history.length) return;
+      // First up from the current draft: remember it, then show newest.
+      if (histPos === -1) {
+        histSaved = input.value;
+        histPos = history.length - 1;
+      } else if (histPos > 0) {
+        histPos--;
+      } else {
+        return; // already at the oldest
+      }
+      input.value = history[histPos];
+    } else {
+      if (histPos === -1) return; // nothing to go down to
+      if (histPos < history.length - 1) {
+        histPos++;
+        input.value = history[histPos];
+      } else {
+        // Past the newest: restore the in-progress draft.
+        histPos = -1;
+        input.value = histSaved;
+        histSaved = '';
+      }
+    }
+
+    // Put the caret at the end so you can keep editing.
+    requestAnimationFrame(() => {
+      input.focus();
+      const n = input.value.length;
+      input.setSelectionRange(n, n);
+      autosize();
+      updatePrompt();
+    });
+  }
+
+  document.getElementById('run').onclick = () => submit(true);
+  const input = document.getElementById('input');
+  input.addEventListener('input', () => { autosize(); updatePrompt(); });
+
+  // "run demo": seed the /demo tree (idempotent) and run notes.uc.
+  document.getElementById('demos').onclick = () => {
+    wasm._ucode_fs_seed_demo();
+    addLine('ucode> run demo (\u002fdemo\/notes.uc)', 'prompt');
+    const ptr = writeStr('/demo/notes.uc');
+    wasm._ucode_fs_run(ptr);
+    wasm._free(ptr);
+    const out = wasm.UTF8ToString(wasm._ucode_get_output());
+    const err = wasm.UTF8ToString(wasm._ucode_get_error());
+    wasm._ucode_clear_output();
+    if (out) addLine(out, 'out');
+    if (err) addLine(err, 'err');
+    input.focus();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey)
+        insertNewline();            // Shift+Enter: always a new line
+      else if (e.altKey)
+        submit(true);               // Alt+Enter: force submit
+      else
+        submit(false);              // plain Enter: submit or continue
+    } else if (e.key === 'ArrowUp' && !input.value.includes('\n')
+               && input.selectionStart === input.value.length) {
+      // Only browse history from the end of a single-line buffer; inside a
+      // multi-line block arrows move the caret within the text.
+      e.preventDefault();
+      histNavigate(-1);
+    } else if (e.key === 'ArrowDown' && !input.value.includes('\n')
+               && input.selectionStart === 0) {
+      e.preventDefault();
+      histNavigate(1);
+    } else if (e.key === 'Escape') {
+      // Clear the current input and exit history browsing.
+      e.preventDefault();
+      input.value = '';
+      autosize();
+      updatePrompt();
+      histPos = -1;
+      histSaved = '';
+    } else if (e.key === 'Tab') {
+      // Tab inserts a space (or the indent used for continuation lines).
+      e.preventDefault();
+      const s = input.selectionStart, epos = input.selectionEnd;
+      const lineStart = input.value.lastIndexOf('\n', s - 1) + 1;
+      const leading = input.value.slice(lineStart, s);
+      const indent = /^[\t ]*$/.test(leading) && s > lineStart ? '    ' : '  ';
+      input.value = input.value.slice(0, s) + indent + input.value.slice(epos);
+      input.selectionStart = input.selectionEnd = s + indent.length;
+      autosize();
+      updatePrompt();
+    }
+  });
+
+  // Bootstrap: use the emscripten factory exposed as `ucodeWasm`.
+  // ucode.js is loaded as a classic script that defines global ucodeWasm.
+  function boot() {
+    if (typeof ucodeWasm !== 'function') {
+      status('failed to load ucodeWasm', 'var(--err)');
+      return;
+    }
+    status('initializing…');
+    ucodeWasm().then((mod) => {
+      wasm = mod;
+      status('ready · ' + mod._ucode_module_count() + ' modules', 'var(--ok)');
+      addLine('ucode web interpreter ready.', 'result');
+      addLine('Stateful session: variables persist between commands.', 'result');
+      addLine('Enter runs · Shift+Enter new line · Alt+Enter force run · ' +
+        '↑ / ↓ history · Esc clear · import { x } from "math" works too.', 'dim');
+      // Seed the demo filesystem so the fs module has files to work with.
+      mod._ucode_fs_seed_demo();
+      addLine('Loaded demo filesystem to /demo (use the "run demo" button, ' +
+        'or read files with require("fs").readfile("/demo/..."))', 'dim');
+      document.getElementById('input').focus();
+    }).catch((e) => {
+      status('init error: ' + e, 'var(--err)');
+    });
+  }
+
+  // Give the script a tick to define ucodeWasm.
+  if (document.readyState === 'complete') boot();
+  else window.addEventListener('load', boot);
+</script>
+<script src="ucode.js"></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+hello from the ucode web interpreter!
+this text file lives in an in-memory filesystem (MEMFS).

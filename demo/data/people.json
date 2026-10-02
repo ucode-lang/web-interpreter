@@ -1,0 +1,5 @@
+[
+    { "name": "Ada",    "age": 36, "role": "engineer" },
+    { "name": "Grace",  "age": 85, "role": "admiral" },
+    { "name": "Linus",  "age": 63, "role": "maintainer" }
+]

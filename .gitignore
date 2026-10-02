@@ -1,0 +1,14 @@
+# Build artifacts
+build/
+dist/
+web/ucode.js
+web/ucode.wasm
+
+# pens saved through serve.py
+pens/
+
+# deployment secrets (see .env.example)
+.env
+
+# python bytecode from serve.py
+__pycache__/
