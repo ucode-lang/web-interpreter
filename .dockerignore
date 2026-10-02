@@ -1,0 +1,13 @@
+.git
+build/
+dist/
+pens/
+notes/
+test/
+__pycache__/
+**/__pycache__/
+*.md
+.env
+.dockerignore
+Dockerfile
+compose.yaml

@@ -1,0 +1,46 @@
+# ucodepen deployment: the app plus a Postgres it stores pens in.
+#
+#   cp .env.example .env   # fill in secrets, at least POSTGRES_PASSWORD
+#   docker compose up -d --build
+#
+# Everything optional lives in .env; with no GitHub credentials the app runs
+# in local mode (no login, one shared pen store).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ucodepen
+      POSTGRES_USER: ucodepen
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ucodepen -d ucodepen"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://ucodepen:${POSTGRES_PASSWORD}@db:5432/ucodepen
+      # leave the three GitHub values empty for local mode (no login)
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # set to restrict logins to members of one organisation, e.g. ucode-lang
+      GITHUB_ORG: ${GITHUB_ORG:-}
+      # session signing key: any long random string (openssl rand -hex 32)
+      SECRET_KEY: ${SECRET_KEY:-}
+      # public base url when behind a proxy that hides the Host header
+      BASE_URL: ${BASE_URL:-}
+    ports:
+      - "${PORT:-8000}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
