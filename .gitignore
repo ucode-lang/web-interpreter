@@ -1,8 +1,6 @@
 # Build artifacts
 build/
 dist/
-web/ucode.js
-web/ucode.wasm
 
 # pens saved through serve.py
 pens/

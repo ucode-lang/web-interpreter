@@ -44,8 +44,8 @@ src/
   web-bridge-demo.inc      generated per-build (demo/ tree)
 web/
   index.html      minimal REPL UI
-  ucode.js        built glue (generated)
-  ucode.wasm      built runtime (generated)
+  ucode.js        built glue (committed build artifact, see Building)
+  ucode.wasm      built runtime (committed build artifact, see Building)
   pen/            ucodepen, the multi-file playground (see below)
 dist/             raw build output (generated)
 serve.py          static server + tiny pen storage API
@@ -65,7 +65,9 @@ source /path/to/emsdk/emsdk_env.sh
 
 This fetches the pinned ucode commit (and builds its json-c and libmd
 dependencies -- network access needed), links the bridge into
-dist/ucode.{js,wasm}, and copies the runtime into web/.
+dist/ucode.{js,wasm}, and copies the runtime into web/. The web/ artifacts
+are committed, so a fresh clone deploys without a WASM toolchain; after
+changing the C sources, re-run ./build.sh and commit the new artifacts.
 
 Currently statically linked modules: `io`, `math`, `struct`, `fs`, `zlib`,
 `resolv`, `socket`, `digest`. (Server-side socket APIs are compiled in but
