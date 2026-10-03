@@ -537,7 +537,9 @@
     try { src = decodeURIComponent(m[1]); } catch (e) { return; }
     if (!src.trim()) return;
 
-    history.replaceState(null, '', location.pathname + location.search);
+    // window.history explicitly: the top-level `let history = []` (command
+    // history) shadows the global History object in this script's scope.
+    window.history.replaceState(null, '', location.pathname + location.search);
 
     addLine('ucode> ' + src, 'prompt');
     execute(transformImports(src), false);
