@@ -361,6 +361,14 @@
     });
   }
 
+  // Heuristic: treat as an expression (eval + echo result) when it does
+  // not start with a statement keyword. Otherwise run it as a script.
+  // Shared by the REPL submit path and the #code= deep-link path so both
+  // behave identically (a bare `3 * 4` prints its result either way).
+  function looksLikeExpression(src) {
+    return !/^\s*(?:let\b|var\b|const\b|function\b|if\b|for\b|while\b|return\b|do\b|switch\b|try\b|catch\b|new\b|else\b|import\b|module\b|export\b|print\b)/i.test(src);
+  }
+
   function submit(force) {
     const input = document.getElementById('input');
     const src = input.value;
@@ -375,10 +383,7 @@
     autosize();
     updatePrompt();
     addLine('ucode> ' + src, 'prompt');
-    // Heuristic: treat as an expression (eval + echo result) when it does
-    // not start with a statement keyword. Otherwise run it as a script.
-    const asExpr = !/^\s*(?:let\b|var\b|const\b|function\b|if\b|for\b|while\b|return\b|do\b|switch\b|try\b|catch\b|new\b|else\b|import\b|module\b|export\b|print\b)/i.test(src);
-    execute(transformImports(src), asExpr);
+    execute(transformImports(src), looksLikeExpression(src));
 
     // Record in history (dedupe consecutive repeats). Multi-line blocks are
     // stored whole so you can recall them with arrow-up.
@@ -525,9 +530,9 @@
   //
   // External pages (docs, landing page "Run" buttons) can open the REPL
   // with a program preloaded. The source is echoed into the transcript,
-  // executed as a script (statement mode, imports rewritten for
-  // persistence), and left in the input box for tweaking. The hash is
-  // consumed so a reload does not re-run the example.
+  // executed with the same expression/script heuristic as typed input
+  // (imports rewritten for persistence), and left in the input box for
+  // tweaking. The hash is consumed so a reload does not re-run the example.
   // ------------------------------------------------------------------
   function consumeCodeHash() {
     const m = location.hash.match(/^#code=(.+)$/);
@@ -542,7 +547,7 @@
     window.history.replaceState(null, '', location.pathname + location.search);
 
     addLine('ucode> ' + src, 'prompt');
-    execute(transformImports(src), false);
+    execute(transformImports(src), looksLikeExpression(src));
 
     const el = document.getElementById('input');
     el.value = src;
