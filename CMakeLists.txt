@@ -15,7 +15,7 @@ project(ucodepen-web C)
 
 # Pinned ucode commit: the emscripten-support branch of
 # github.com/ucode-lang/ucode. Bump this to track upstream.
-set(UCODE_GIT_TAG c70c9ec0785238804bb67e7fff0fa5d323810f43)
+set(UCODE_GIT_TAG b3182770c67d219d6b441decccd452d290f4e94c)
 
 # Modules statically linked into ucode-modules.a and preloaded into the
 # global `modules` dictionary at VM init. Must match what web-bridge.c
