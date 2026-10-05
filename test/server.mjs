@@ -218,6 +218,18 @@ console.log('local mode (no credentials configured)');
 
 	const login = await call(port, '/login');
 	check('/login just bounces back in local mode', login.status === 302 && login.headers.get('location') === '/pen/');
+
+	const run = await call(port, '/run/3%20*%205');
+	check('/run/<code> redirects to the repl with #code=', run.status === 302 && run.headers.get('location') === '/#code=3%20*%205', `${run.status} ${run.headers.get('location')}`);
+
+	const runQuoted = await call(port, '/run/print(%27hi%27)');
+	check('/run/<code> keeps fragment-legal characters raw', runQuoted.status === 302 && runQuoted.headers.get('location') === "/#code=print('hi')", runQuoted.headers.get('location'));
+
+	const runHash = await call(port, '/run/a%23b');
+	check('/run/<code> always encodes # so it cannot truncate the fragment', runHash.status === 302 && runHash.headers.get('location') === '/#code=a%23b', runHash.headers.get('location'));
+
+	const runEmpty = await call(port, '/run/');
+	check('/run/ without code is rejected', runEmpty.status === 400);
 }
 
 // -- 2. github mode, unauthenticated ----------------------------------------

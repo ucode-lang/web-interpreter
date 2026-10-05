@@ -155,10 +155,15 @@ selector next to it. `print()` and `warn()` in a script go to the stdio pane.
 ```
 
 `serve.py` is stdlib-only: it serves `web/` and adds a small storage API
-(`GET/PUT/DELETE /api/pens[/<id>]`, `GET /p/<id>` -> redirect to the app) that
+(`GET/PUT/DELETE /api/pens[/<id>]`, `GET /p/<id>` -> redirect to the app,
+`GET /run/<code>` -> redirect to the REPL with `#code=<code>`) that
 saves pens as JSON under `pens/`. Without it the app still works -- plain
 static hosting is fine, pens then live in `localStorage` and sharing happens
 through the URL fragment.
+
+The REPL at `/` runs code from a deep link: `/#code=<source>` executes
+`<source>` on load (bare expressions print their result), and
+`/run/<source>` is the shareable short form of the same thing.
 
 ## Deployment
 

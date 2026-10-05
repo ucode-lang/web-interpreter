@@ -249,6 +249,24 @@ class Handler(SimpleHTTPRequestHandler):
 
             return
 
+        if path.startswith("/run/"):
+            # Virtual route: run code in the web REPL. The code is the
+            # percent-encoded remainder of the path; the REPL picks it up
+            # from the #code= fragment (see web/index.html).
+            code = unquote(path[len("/run/"):])
+
+            if code.strip():
+                # Keep common code characters raw so shared links read
+                # naturally (fragment-legal sub-delims plus : / ?). A raw
+                # space is still encoded, and # is always encoded so it can
+                # never truncate the fragment. The REPL decodes with
+                # decodeURIComponent, so anything left encoded round-trips.
+                self.redirect("/#code=" + quote(code, safe="*+-./&=:(),;?'"))
+            else:
+                self.problem(400, "empty code")
+
+            return
+
         if path == "/pen":
             self.redirect("/pen/")
             return
