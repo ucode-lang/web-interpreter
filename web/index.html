@@ -201,18 +201,10 @@
     let i = 0;
     const n = src.length;
     const stack = []; // pending openers: '(', '[', '{'
-    let inLineComment = false;
 
     while (i < n) {
       const ch = src[i];
       const ch2 = i + 1 < n ? src[i + 1] : '';
-
-      // Line comment: //  or  a lone /  (ucode treats / as a comment start)
-      if (inLineComment) {
-        if (ch === '\n') inLineComment = false;
-        i++;
-        continue;
-      }
 
       // String: ", ', `  -- scan to matching unescaped closer.
       if (ch === '"' || ch === "'" || ch === '`') {
@@ -229,21 +221,18 @@
         continue;
       }
 
-      // Block comment: {# ... #}  or  {#- ... -#}
-      if (ch === '{' && ch2 === '#') {
+      // Line comment: // to end of line.
+      if (ch === '/' && ch2 === '/') {
+        while (i < n && src[i] !== '\n') i++;
+        continue;
+      }
+
+      // Block comment: /* ... */
+      if (ch === '/' && ch2 === '*') {
         i += 2;
         let closed = false;
         while (i < n) {
-          if (src[i] === '#') {
-            // -# or #  both close (the dash is optional in either position)
-            const next = i + 1 < n ? src[i + 1] : '';
-            if (next === '#' || (next === '-' && i + 2 < n && src[i + 2] === '}')) {
-              closed = true;
-              // consume '#}' or '-#}'
-              i += (src[i + 1] === '-') ? 3 : 2;
-              break;
-            }
-          }
+          if (src[i] === '*' && src[i + 1] === '/') { closed = true; i += 2; break; }
           i++;
         }
         if (!closed) return true; // unterminated block comment
@@ -361,12 +350,105 @@
     });
   }
 
-  // Heuristic: treat as an expression (eval + echo result) when it does
-  // not start with a statement keyword. Otherwise run it as a script.
-  // Shared by the REPL submit path and the #code= deep-link path so both
-  // behave identically (a bare `3 * 4` prints its result either way).
+  // Start offset of the last non-empty top-level statement: the text after
+  // the last top-level ';' (outside strings, comments and brackets), or 0
+  // when there is no top-level ';'. ucode requires ';' between statements,
+  // so newlines never separate them (they are just whitespace).
+  function lastStatementStart(src) {
+    let i = 0;
+    const n = src.length;
+    let depth = 0;
+    let lastStart = 0;
+    let prevStart = 0;
+
+    // A statement ended just before position end: remember it if
+    // non-empty so a trailing separator falls back to it.
+    const boundary = (end) => {
+      if (src.slice(lastStart, end).trim() !== '')
+        prevStart = lastStart;
+      lastStart = end + 1;
+    };
+
+    while (i < n) {
+      const ch = src[i];
+      const ch2 = i + 1 < n ? src[i + 1] : '';
+
+      // String: ", ', ` -- scan to matching unescaped closer.
+      if (ch === '"' || ch === "'" || ch === '`') {
+        const q = ch;
+        i++;
+        while (i < n) {
+          if (src[i] === '\\') { i += 2; continue; } // skip escape
+          if (src[i] === q) break;
+          i++;
+        }
+        i++;
+        continue;
+      }
+
+      // Comments: // to end of line, /* ... */.
+      if (ch === '/' && ch2 === '/') {
+        while (i < n && src[i] !== '\n') i++;
+        continue;
+      }
+      if (ch === '/' && ch2 === '*') {
+        i += 2;
+        while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++;
+        i += 2;
+        continue;
+      }
+
+      if (ch === '(' || ch === '[' || ch === '{') { depth++; i++; continue; }
+      if (ch === ')' || ch === ']' || ch === '}') {
+        if (depth > 0) {
+          depth--;
+          // A '}' back at the top level ends the block statement it
+          // closes (if/while/for/try/function) -- no ';' needed. A
+          // top-level object literal is always an rhs of a statement,
+          // so this is unambiguous.
+          if (ch === '}' && depth === 0)
+            boundary(i);
+        }
+        i++;
+        continue;
+      }
+
+      if (depth === 0 && ch === ';') {
+        boundary(i);
+        i++;
+        continue;
+      }
+
+      i++;
+    }
+
+    return src.slice(lastStart).trim() === '' ? prevStart : lastStart;
+  }
+
+  // Heuristic: the REPL echoes the value of the last statement, so the
+  // expression/script decision is made on that statement's leading token.
+  // A bare expression (or assignment) echoes its value; a statement
+  // keyword or a builtin whose return value is not interesting to echo
+  // (print-style and diagnostic functions) runs as a script. Shared by the
+  // REPL submit path and the #code= deep-link path so both behave
+  // identically (a bare `3 * 4` prints its result either way).
   function looksLikeExpression(src) {
-    return !/^\s*(?:let\b|var\b|const\b|function\b|if\b|for\b|while\b|return\b|do\b|switch\b|try\b|catch\b|new\b|else\b|import\b|module\b|export\b|print\b)/i.test(src);
+    let i = lastStatementStart(src);
+    const n = src.length;
+
+    // Skip leading whitespace and block comments.
+    for (;;) {
+      while (i < n && /\s/.test(src[i])) i++;
+      if (src[i] === '/' && src[i + 1] === '*') {
+        i += 2;
+        while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++;
+        i += 2;
+        continue;
+      }
+      break;
+    }
+
+    return !/^(?:let\b|var\b|const\b|function\b|if\b|for\b|while\b|return\b|do\b|switch\b|try\b|catch\b|new\b|else\b|import\b|from\b|module\b|export\b|print\b|printf\b|warn\b|assert\b|die\b|render\b)/i.test(src.slice(i));
   }
 
   function submit(force) {
