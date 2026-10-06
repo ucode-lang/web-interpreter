@@ -651,6 +651,11 @@
     ucodeWasm().then((mod) => {
       wasm = mod;
       status('ready · ' + mod._ucode_module_count() + ' modules', 'var(--ok)');
+      // Show which ucode the wasm was built from (abbreviated commit + date).
+      const ver = mod.UTF8ToString(mod._ucode_version());
+      if (ver && ver !== 'unknown')
+        document.querySelector('.ver').textContent =
+          'web interpreter (wasm · ' + ver.split(' ').join(' · ') + ')';
       addLine('ucode web interpreter ready.', 'result');
       addLine('Stateful session: variables persist between commands.', 'result');
       addLine('Enter runs · Shift+Enter new line · Alt+Enter force run · ' +

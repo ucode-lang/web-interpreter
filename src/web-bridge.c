@@ -11,6 +11,10 @@
  *                            diverted to the render buffer (see below)
  *   ucode_reset()            drop the VM (globals, closures) and start fresh
  *   ucode_module_count()     number of statically linked modules
+ *   ucode_version()          pointer to a NUL-terminated C string with the
+ *                            ucode version the wasm was built from
+ *                            (abbreviated commit + build date, baked in at
+ *                            compile time via the UCODE_VERSION macro)
  *   ucode_get_output()       pointer to a NUL-terminated C string with all
  *                            output captured since the last call (stdout
  *                            only; C's stderr is captured separately in
@@ -677,6 +681,17 @@ EMSCRIPTEN_KEEPALIVE
 int ucode_module_count(void)
 {
 	return (int)(sizeof(web_modules) / sizeof(web_modules[0]));
+}
+
+#ifndef UCODE_VERSION
+#define UCODE_VERSION "unknown"
+#endif
+
+EMSCRIPTEN_KEEPALIVE
+const char *
+ucode_version(void)
+{
+	return UCODE_VERSION;
 }
 
 /* ------------------------------------------------------------------ */

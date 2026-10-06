@@ -110,12 +110,21 @@ set_source_files_properties(${MODULES_INC} ${DEMO_INC}
 # ---------------------------------------------------------------------------
 # The web bridge (ucode.js + ucode.wasm)
 # ---------------------------------------------------------------------------
+
+# Version string baked into the bridge: abbreviated ucode pin + build date,
+# surfaced in the UI via ucode_version().
+string(SUBSTRING ${UCODE_GIT_TAG} 0 8 UCODE_GIT_SHORT)
+string(TIMESTAMP UCODE_BUILD_DATE "%Y-%m-%d" UTC)
+set(UCODE_VERSION "${UCODE_GIT_SHORT} ${UCODE_BUILD_DATE}")
+
 add_executable(ucodepen
   src/web-bridge.c
   ${MODULES_INC}
   ${DEMO_INC}
 )
 add_dependencies(ucodepen ucode-build)
+
+target_compile_definitions(ucodepen PRIVATE UCODE_VERSION="${UCODE_VERSION}")
 
 target_include_directories(ucodepen PRIVATE
   ${UCODE_SRC_DIR}/include
@@ -139,7 +148,7 @@ set(_q "")
 foreach(f _ucode_run _ucode_eval _ucode_run_file _ucode_render_file
           _ucode_render_string _ucode_reset _ucode_get_output
           _ucode_get_render _ucode_clear_output _ucode_clear_render
-          _ucode_get_error _ucode_module_count _ucode_fs_seed_demo
+          _ucode_get_error _ucode_module_count _ucode_version _ucode_fs_seed_demo
           _ucode_fs_read _ucode_fs_run _ucode_fs_list _ucode_vfs_write
           _ucode_vfs_remove _ucode_vfs_clear _ucode_vfs_list
           _malloc _free)
