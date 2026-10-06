@@ -2,8 +2,10 @@
 // Run it from the REPL with the "Run demo" button, or:
 //     let fs = require("fs"); print(fs.readfile("/demo/notes.uc") + "\n");
 
-// NB: ucode's print() does NOT add a trailing newline, so every call
-// below passes "\n" explicitly.
+// NB: ucode's print() writes its arguments verbatim -- no separator
+// between them and no trailing newline. For formatted output, use
+// printf("... %s ...\n", ...) or backtick template literals, which
+// interpolate ${...} expressions.
 
 let fs = require("fs");
 
@@ -12,8 +14,8 @@ print("== ucode demo ==\n");
 // basic types and arithmetic
 let x = 10;
 let s = "world";
-print("greeting:  hello", s, "\n");
-print("arith:     2 ** 10 =", 2 ** 10, "\n");
+printf("greeting:  hello %s\n", s);
+printf("arith:     2 ** 10 = %d\n", 2 ** 10);
 
 // a named function and an anonymous one
 function twice(n) {
@@ -22,12 +24,12 @@ function twice(n) {
 let add = function(a, b) {
     return a + b;
 };
-print("twice(21):  ", twice(21), "\n");
-print("add(3, 4):  ", add(3, 4), "\n");
+print(`twice(21):  ${twice(21)}\n`);
+print(`add(3, 4):  ${add(3, 4)}\n`);
 
 // a classic for loop
 for (let i = 1; i <= 3; i = i + 1) {
-    print("count:", i, "\n");
+    printf("count: %d\n", i);
 }
 
 // a while loop
@@ -35,7 +37,7 @@ let n = 0;
 while (n < 2) {
     n = n + 1;
 }
-print("looped until n =", n, "\n");
+printf("looped until n = %d\n", n);
 
 // working with the virtual filesystem
 print("files in /demo:\n");
@@ -45,7 +47,7 @@ for (let i = 0; i < length(entries); i = i + 1) {
 }
 
 let st = fs.stat("/demo/hello.txt");
-print("hello.txt size:", st.size, "type:", st.type, "\n");
+printf("hello.txt size: %d, type: %s\n", st.size, st.type);
 
 // sum the numbers file line by line
 let fp = fs.open("/demo/data/numbers.txt", "r");
@@ -56,14 +58,14 @@ while (length(line) > 0) {
     line = fp.read("line");
 }
 fp.close();
-print("sum of numbers.txt:", total, "\n");
+printf("sum of numbers.txt: %d\n", total);
 
 // parse JSON from a file
 let people = json(fs.readfile("/demo/data/people.json"));
-print("people:", length(people), "\n");
+printf("people: %d\n", length(people));
 for (let i = 0; i < length(people); i = i + 1) {
     let p = people[i];
-    print("   ", p.name, "(age", p.age, ", " + p.role + ")", "\n");
+    print(`   ${p.name} (age ${p.age}, ${p.role})\n`);
 }
 
 print("== done ==\n");
