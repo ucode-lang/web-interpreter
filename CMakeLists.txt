@@ -15,12 +15,12 @@ project(ucodepen-web C)
 
 # Pinned ucode commit: the emscripten-support branch of
 # github.com/ucode-lang/ucode. Bump this to track upstream.
-set(UCODE_GIT_TAG b3182770c67d219d6b441decccd452d290f4e94c)
+set(UCODE_GIT_TAG 2f62a446cfd57d792aafd48a74e51e6ac4ea5cae)
 
 # Modules statically linked into ucode-modules.a and preloaded into the
 # global `modules` dictionary at VM init. Must match what web-bridge.c
 # expects in web-bridge-modules.inc.
-set(WEB_MODULES io math struct fs zlib resolv socket digest)
+set(WEB_MODULES io math struct fs zlib resolv socket digest netaddr)
 # LIST_SEPARATOR below rewrites , -> ; in the external project's command
 # lines, so the module list reaches ucode's CMake as one ;-separated value.
 string(REPLACE ";" "," WEB_MODULES_CSV "${WEB_MODULES}")
