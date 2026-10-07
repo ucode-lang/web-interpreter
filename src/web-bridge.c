@@ -228,8 +228,19 @@ vm_init(void)
 {
 	size_t i;
 
-	memset(&vm_config, 0, sizeof(vm_config));
-	vm_config.raw_mode = true;
+	/* Block-tag whitespace stripping must be set here rather than per-compile:
+	 * the core render() builtin compiles templates against a copy of this
+	 * exact config (uc_require_ucode() only flips raw_mode on the copy), so
+	 * the pen's template runs inherit lstrip_blocks/trim_blocks from it --
+	 * matching the ucode CLI defaults (see main.c). The per-compile flips in
+	 * compile_source() only cover the C-level ucode_render_file() /
+	 * ucode_render_string() entry points, which the pen pipeline never uses
+	 * (it renders from runner.uc via render()). */
+	vm_config = (uc_parse_config_t) {
+		.raw_mode = true,
+		.lstrip_blocks = true,
+		.trim_blocks = true,
+	};
 	/* Build the module search path from scratch (NOT uc_search_path_init, which
 	 * copies the build-time LIB_SEARCH_PATH default -- a single colon-joined
 	 * string the compile-time import resolver does not split on ':'), one entry
@@ -247,8 +258,6 @@ vm_init(void)
 	 * (Both entries are globs matching *.uc.) The global REQUIRE_SEARCH_PATH
 	 * array is a copy of this list (vm.c builds it in
 	 * uc_vm_alloc_global_scope), so scripts can still shuffle it at runtime. */
-	vm_config.module_search_path.count = 0;
-	vm_config.module_search_path.entries = NULL;
 	uc_search_path_add(&vm_config.module_search_path, (char *)"/pen/*.uc");
 	uc_search_path_add(&vm_config.module_search_path, (char *)"/virtual/*.uc");
 
